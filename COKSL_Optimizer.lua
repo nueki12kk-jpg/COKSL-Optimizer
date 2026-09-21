@@ -1417,7 +1417,7 @@ local C = {
 	Thumb = Color3.fromRGB(150, 150, 150),
 }
 local FONT = Enum.Font.SourceSansBold
-local WIN_W, WIN_H, BAR_H = 560, 260, 42
+local WIN_W, WIN_H, BAR_H, FOOT_H = 560, 260, 42, 22
 local SCROLL_IMG = "rbxassetid://7445543667"
 
 local function New(class, props, children)
@@ -1476,22 +1476,14 @@ ProtectGui(Gui)
 local function MakeDraggable(handle, target, onClick)
 	local dragging, moved, startPos, startUDim, startInput = false, false, nil, nil, nil
 	Connect(handle.InputBegan, function(input)
-		if IsPointerBegin(input) and not dragging then
+		if IsPointerBegin(input) then
 			dragging, moved = true, false
 			startPos, startUDim, startInput = input.Position, target.Position, input
-			local conn
-			conn = input.Changed:Connect(function()
-				if input.UserInputState == Enum.UserInputState.End then
-					dragging = false
-					conn:Disconnect()
-					if not moved and onClick then onClick() end
-				end
-			end)
 		end
 	end)
 	Connect(UserInputService.InputChanged, function(input)
 		if not dragging or not IsPointerMove(input) then return end
-		if input.UserInputType == Enum.UserInputType.Touch and input ~= startInput then return end
+		if startInput.UserInputType == Enum.UserInputType.Touch and input ~= startInput then return end
 		local delta = input.Position - startPos
 		if delta.Magnitude > 6 then moved = true end
 		if moved then
@@ -1502,6 +1494,15 @@ local function MakeDraggable(handle, target, onClick)
 					math.clamp(startUDim.Y.Scale + delta.Y / vp.Y, 0.03, 0.97), 0
 				)
 			end
+		end
+	end)
+	Connect(UserInputService.InputEnded, function(input)
+		if not dragging then return end
+		local isTouch = startInput.UserInputType == Enum.UserInputType.Touch
+		local matches = isTouch and input == startInput or (not isTouch and input.UserInputType == Enum.UserInputType.MouseButton1)
+		if matches then
+			dragging = false
+			if not moved and onClick then onClick() end
 		end
 	end)
 end
@@ -1751,7 +1752,17 @@ local TabsHolder = New("Frame", {
 })
 
 local Content = New("Frame", {
-	BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, BAR_H), Size = UDim2.new(1, 0, 1, -BAR_H), Parent = Main,
+	BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, BAR_H), Size = UDim2.new(1, 0, 1, -(BAR_H + FOOT_H)), Parent = Main,
+})
+
+Label({
+	Text = "by @nueki12kk (Discord) :)", TextSize = 13, TextTransparency = 0.1,
+	TextXAlignment = Enum.TextXAlignment.Center, Position = UDim2.new(0, 0, 1, -FOOT_H),
+	Size = UDim2.new(1, 0, 0, FOOT_H), Parent = Main,
+})
+New("Frame", {
+	BackgroundColor3 = C.White, BackgroundTransparency = 0.6, BorderSizePixel = 0,
+	Position = UDim2.new(0, 14, 1, -FOOT_H), Size = UDim2.new(1, -28, 0, 1), Parent = Main,
 })
 
 local TabList = {}
@@ -1876,6 +1887,38 @@ Connect(UserInputService.InputBegan, function(input)
 	if input.KeyCode == Enum.KeyCode.RightShift then Main.Visible = not Main.Visible end
 end)
 
+local HUD = NewFeature("FpsCounter", {})
+local HudFrame = New("Frame", {
+	Name = "COKSL_FpsCounter", BackgroundColor3 = C.Black, BackgroundTransparency = 0.3, BorderSizePixel = 0,
+	Active = true, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.06),
+	Size = UDim2.fromOffset(104, 30), Visible = false, Parent = Gui,
+}, { Corner(8), New("UIStroke", { Color = C.White, Transparency = 0.7, Thickness = 1 }) })
+local HudText = Label({
+	Text = "XXXX FPS", TextSize = 18, TextXAlignment = Enum.TextXAlignment.Center,
+	Size = UDim2.fromScale(1, 1), Parent = HudFrame,
+})
+MakeDraggable(HudFrame, HudFrame)
+
+function HUD.enable(f)
+	HudFrame.Visible = true
+	local gen = f.gen
+	task.spawn(function()
+		local frames, t0 = 0, os.clock()
+		local conn = RunService.Heartbeat:Connect(function() frames += 1 end)
+		while HUD.enabled and HUD.gen == gen do
+			task.wait(0.5)
+			local now = os.clock()
+			HudText.Text = string.format("%d FPS", math.floor(frames / math.max(now - t0, 0.05) + 0.5))
+			frames, t0 = 0, now
+		end
+		conn:Disconnect()
+	end)
+end
+
+function HUD.disable()
+	HudFrame.Visible = false
+end
+
 local function featureToggle(name, key, feature, hint)
 	return ConfigPage.Toggle({
 		Name = name, Flag = key, Hint = hint,
@@ -1942,6 +1985,9 @@ ConfigPage.Slider({
 ConfigPage.Slider({
 	Name = "Idle After", Flag = "IdleSeconds", Key = "IdleSeconds", Min = 10, Max = 300, Step = 5, Default = 45, Suffix = " s",
 })
+
+ConfigPage.Section("FPS Counter")
+featureToggle("FPS Counter", "FpsCounter", Features.FpsCounter, "draggable HUD, e.g. 144 FPS")
 
 ConfigPage.Section("Quick Optimizer")
 featureToggle("Graphics", "QuickGraphics", Features.QuickGraphics, "quality, mesh detail, interpolation")
